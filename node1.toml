@@ -1,0 +1,13 @@
+[server]
+port = 5555
+
+[node]
+detect-drivers = false
+
+[relay]
+url = "http://appium1:4723"
+status-endpoint = "/status"
+# "1" means one concurrent session; adjust as needed
+configs = [
+  "1", "{\"platformName\":\"Android\",\"appium:automationName\":\"UiAutomator2\"}"
+]
