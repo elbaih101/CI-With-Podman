@@ -1,0 +1,102 @@
+services:
+  selenium-hub:
+    image: docker.io/selenium/hub:4.23.0
+    container_name: selenium-hub
+    networks: [ci]
+    ports:
+      - "4444:4444"
+    healthcheck:
+      test: ["CMD", "curl", "-fsSL", "http://localhost:4444/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  chrome:
+    image: docker.io/selenium/node-chrome:4.23.0
+    container_name: node-chrome
+    networks: [ci]
+    shm_size: "2g"
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+
+  firefox:
+    image: docker.io/selenium/node-firefox:4.23.0
+    container_name: node-firefox
+    networks: [ci]
+    shm_size: "2g"
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+
+  appium1:
+        image: docker.io/appium/appium:latest
+        container_name: appium1
+        networks: [ci]
+        command: ["appium","--config","/appium/appium1.yml"]
+        volumes:
+          - ./appium/appium1.yml:/appium/appium1.yml:Z
+        ports: ["4723:4723"]
+
+  appium2:
+        image: docker.io/appium/appium:latest
+        container_name: appium2
+        networks: [ci]
+        command: ["appium","--config","/appium/appium2.yml"]
+        volumes:
+          - ./appium/appium2.yml:/appium/appium2.yml:Z
+        ports: ["4733:4733"]
+
+  appium-relay-1:
+    image: docker.io/selenium/node-base:4.23.0
+    container_name: appium-relay-1
+    networks: [ci]
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+      appium1:
+        condition: service_started
+    volumes:
+      - ./relay/node1.toml:/opt/selenium/node.toml:Z
+    command: ["selenium-node","--config","/opt/selenium/node.toml","--bind-host","0.0.0.0","--publish-events","tcp://selenium-hub:4442","--subscribe-events","tcp://selenium-hub:4443"]
+
+  appium-relay-2:
+    image: docker.io/selenium/node-base:4.23.0
+    container_name: appium-relay-2
+    networks: [ci]
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+      appium2:
+        condition: service_started
+    volumes:
+      - ./relay/node2.toml:/opt/selenium/node.toml:Z
+    command: ["selenium-node","--config","/opt/selenium/node.toml","--bind-host","0.0.0.0","--publish-events","tcp://selenium-hub:4442","--subscribe-events","tcp://selenium-hub:4443"]
+      
+
+  android-emulator:
+        image: docker.io/halimqarroum/docker-android:api-33
+        container_name: android-emulator
+        privileged: true
+        networks: [ci]
+        ports:
+          - "5555:5555"   
+        command: [ "emulator", "-no-window","-no-audio", "-gpu", "swiftshader_indirect"]
+        healthcheck:
+          test: ["CMD", "adb", "shell", "getprop", "sys.boot_completed"]
+          interval: 30s
+          timeout: 10s
+          retries: 40
+
+networks:
+      ci:
+        driver: bridge
+        external: true        
