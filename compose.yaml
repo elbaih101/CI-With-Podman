@@ -4,9 +4,10 @@ services:
     container_name: selenium-hub
     networks: [ci]
     ports:
-      - "4444:4444"
       - "4443:4443"
       - "4442:4442"
+      - "4444:4444"
+
     healthcheck:
       test: ["CMD", "curl", "-fsSL", "http://localhost:4444/status"]
       interval: 10s
@@ -73,6 +74,7 @@ services:
       - SE_EVENT_BUS_PUBLISH_PORT=4442
       - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
       - SE_OPTS=--config /opt/selenium/node.toml
+      
 
   appium-relay-2:
     image: docker.io/selenium/node-base:latest
