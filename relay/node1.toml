@@ -1,4 +1,5 @@
 [server]
+host = "appium-relay-1"
 port = 5555
 
 [node]
@@ -11,3 +12,8 @@ status-endpoint = "/status"
 configs = [
   "1", "{\"platformName\":\"Android\",\"appium:automationName\":\"UiAutomator2\"}"
 ]
+
+[events]
+host ="selenium-hub"
+publish = "tcp://selenium-hub:4442"
+subscribe = "tcp://selenium-hub:4443"
