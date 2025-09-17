@@ -1,0 +1,120 @@
+# This is a Podman Compose file for setting up a Selenium Grid with Appium.
+# It uses the Podman container engine to manage a network of services.
+
+services:
+  # The central hub for the Selenium Grid. It receives test requests and routes them to the appropriate node.
+  selenium-hub:
+    image: docker.io/selenium/hub:latest
+    container_name: selenium-hub
+    networks: [ci] # Connects the hub to the 'ci' network for internal communication.
+    ports:
+      # Maps the hub's ports to the host machine so clients can connect.
+      - "4443:4443" # For publishing events from nodes (internal).
+      - "4442:4442" # For subscribing to events (internal).
+      - "4444:4444" # The main port for receiving test requests from clients.
+    healthcheck:
+      test: ["CMD", "curl", "-fsSL", "http://localhost:4444/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 30 # A health check to ensure the hub is up and ready before other services start.
+
+  # A Selenium Node for running web browser tests using Chrome.
+  chrome:
+    image: docker.io/selenium/node-chrome:latest
+    container_name: node-chrome
+    networks: [ci]
+    shm_size: "2g" # Allocates shared memory for the browser to prevent crashes during tests.
+    depends_on:
+      selenium-hub:
+        condition: service_healthy # Ensures the hub is ready before this node attempts to connect.
+    environment:
+      # These variables tell the node where to find the Selenium Hub's event bus.
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+
+  # Appium Node 1 for handling Android automation.
+  appium1:
+    image: docker.io/appium/appium:latest
+    container_name: appium1
+    networks: [ci]
+    # The 'command' section starts ADB and Appium in a single shell session.
+    command: >
+      sh -c " adb start-server # Starts the ADB server inside the container.
+      && adb connect podman.internal:5037 # Connects to the host's ADB server for physical/emulated devices.
+      && adb devices # Lists devices to confirm the connection is successful.
+      && appium --config /appium/appium1.yml" # Starts the Appium server with a specific config file.
+    volumes:
+      - ./appium/appium1.yml:/appium/appium1.yml:Z # Mounts a local Appium config file into the container.
+    ports: ["4723:4723"] # Exposes Appium's port to the host for client connections.
+    extra_hosts:
+      - "podman.internal:host-gateway" # Resolves the special hostname `podman.internal` to the host's IP. This is a Podman-specific feature for host-to-container communication.
+    privileged: true # Grants the container elevated privileges to access USB devices and other hardware, required for Android devices.
+    environment:
+      # These environment variables configure Appium's ADB client to connect to the host's ADB server.
+      - ANDROID_ADB_SERVER_ADDRESS=podman.internal
+      - ANDROID_ADB_SERVER_PORT=5037
+      - ADB_SERVER_SOCKET=tcp:podman.internal:5037
+
+  # Appium Node 2, similar to appium1 but on a different port.
+  appium2:
+    image: docker.io/appium/appium:latest
+    container_name: appium2
+    networks: [ci]
+    command: >
+      sh -c " adb start-server
+      && adb connect podman.internal:5037
+      && adb devices
+      && appium --config /appium/appium2.yml"
+    volumes:
+      - ./appium/appium2.yml:/appium/appium2.yml:Z
+    ports: ["4733:4733"] # Uses a different port to allow multiple Appium instances.
+    extra_hosts:
+      - "podman.internal:host-gateway"
+    privileged: true
+    environment:
+      - ANDROID_ADB_SERVER_ADDRESS=podman.internal
+      - ANDROID_ADB_SERVER_PORT=5037
+      - ADB_SERVER_SOCKET=tcp:podman.internal:5037
+
+  # A relay node that connects the Appium container to the Selenium Hub.
+  appium-relay-1:
+    image: docker.io/selenium/node-base:latest
+    container_name: appium-relay-1
+    networks: [ci]
+    depends_on:
+      selenium-hub:
+        condition: service_healthy # Ensures the hub is ready.
+      appium1:
+        condition: service_started # Ensures the Appium service is running.
+    volumes:
+      - ./relay/node1.toml:/opt/selenium/node.toml:Z # Mounts the TOML configuration for the Selenium Node.
+    environment:
+      # Hub connection details.
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_OPTS=--config /opt/selenium/node.toml # Tells the node to use the mounted config file.
+
+  # Relay node for the second Appium container.
+  appium-relay-2:
+    image: docker.io/selenium/node-base:latest
+    container_name: appium-relay-2
+    networks: [ci]
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+      appium2:
+        condition: service_started
+    volumes:
+      - ./relay/node2.toml:/opt/selenium/node.toml:Z
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_OPTS=--config /opt/selenium/node.toml
+
+networks:
+  ci:
+    driver: bridge # The standard network driver for communication between services.
+    external: true # Indicates that this network already exists. You must create it manually with `podman network create ci` before running this compose file.
