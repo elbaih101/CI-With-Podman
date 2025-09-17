@@ -44,9 +44,11 @@ services:
         image: docker.io/appium/appium:latest
         container_name: appium1
         networks: [ci]
+        # network_mode: host
         # to make my host adb devices visible to the container 
         # 1. start the adb dserver
-        # 2.connectto the host server       
+        # 2.connectto the host server   
+        #3. in the code make sure to set the remote adb host capability to the "host.docker.internal"    
         command: >
           sh -c " adb start-server 
           && adb connect host.docker.internal:5037 
@@ -63,6 +65,8 @@ services:
         privileged: true
         # added this to make the tcp for adb be able to see host devies
         environment:
+         - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+         - ANDROID_ADB_SERVER_PORT=5037
          - ADB_SERVER_SOCKET=tcp:host.docker.internal:5037
 
 
@@ -70,6 +74,8 @@ services:
         image: docker.io/appium/appium:latest
         container_name: appium2
         networks: [ci]
+        # network_mode: host
+
         # to make my host adb devices visible to the container 
         # 1. start the adb dserver
         # 2.connectto the host server
@@ -88,6 +94,8 @@ services:
         privileged: true
         # added this to make the tcp for adb be able to see host devies
         environment:
+         - ANDROID_ADB_SERVER_ADDRESS=host.docker.internal
+         - ANDROID_ADB_SERVER_PORT=5037
          - ADB_SERVER_SOCKET=tcp:host.docker.internal:5037
 
   appium-relay-1:
@@ -164,4 +172,6 @@ services:
 networks:
       ci:
         driver: bridge
-        external: true        
+        external: true    
+        
+    
